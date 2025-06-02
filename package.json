@@ -1,10 +1,12 @@
 {
   "name": "be-tradoora",
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "seed": "bun run prisma/seed.ts"
   },
   "dependencies": {
     "@hono/trpc-server": "^0.3.4",
+    "@polar-sh/hono": "^0.3.0",
     "@prisma/client": "^6.8.2",
     "@trpc/server": "^11.1.4",
     "bcrypt-ts": "^7.0.0",

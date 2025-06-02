@@ -1,43 +1,73 @@
-import { initTRPC } from '@trpc/server'
-import { z } from 'zod'
-import { ProductService } from '../../services/product.service'
-import type { Context } from '../context'
+// be-tradoora/src/trpc/router/product.ts
+import { initTRPC, TRPCError } from '@trpc/server';
+import { z } from 'zod';
+import type { Context } from '../context';
+import { prisma } from '../../lib/prisma';
 
-const t = initTRPC.context<Context>().create()
+const t = initTRPC.context<Context>().create();
 
 export const trpcProductRouter = t.router({
-  list: t.procedure.query(() => ProductService.list()),
-  get: t.procedure.input(z.string()).query(({ input }) => ProductService.get(input)),
-  create: t.procedure
+  list: t.procedure
     .input(
-      z.object({
-        sku: z.string(),
-        slug: z.string(),
-        name: z.string().optional(),
-        description: z.string().optional(),
-        price: z.number(),
-        imageUrl: z.string().optional(),
-        stockQuantity: z.number(),
-        minimumOrderQuantity: z.number(),
-      })
+      z
+        .object({
+          searchTerm: z.string().optional(),
+          categoryId: z.string().optional(),
+        })
+        .optional()
     )
-    .mutation(({ input }) => ProductService.create(input)),
-  update: t.procedure
-    .input(
-      z.object({
-        id: z.string(),
-        data: z.object({
-          sku: z.string().optional(),
-          slug: z.string().optional(),
-          name: z.string().optional(),
-          description: z.string().optional(),
-          price: z.number().optional(),
-          imageUrl: z.string().optional(),
-          stockQuantity: z.number().optional(),
-          minimumOrderQuantity: z.number().optional(),
+    .query(async ({ input }) => {
+    return await prisma.product.findMany({
+      where: {
+        ...(input?.searchTerm && {
+          OR: [
+            { name: { contains: input.searchTerm, mode: 'insensitive' } },
+            { description: { contains: input.searchTerm, mode: 'insensitive' } },
+          ],
         }),
-      })
-    )
-    .mutation(({ input }) => ProductService.update(input.id, input.data)),
-  delete: t.procedure.input(z.string()).mutation(({ input }) => ProductService.delete(input)),
-})
+        ...(input?.categoryId && { categoryId: input.categoryId }),
+      },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+    }),
+  getBySlug: t.procedure
+    .input(z.object({ slug: z.string() }))
+    .query(async ({ input }) => {
+      const product = await prisma.product.findUnique({
+        where: { slug: input.slug },
+        select: {
+          id: true,
+          sku: true,
+          slug: true,
+          name: true,
+          description: true,
+          price: true,
+          imageUrl: true,
+          stockQuantity: true,
+          minimumOrderQuantity: true,
+          createdAt: true,
+          updatedAt: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+      if (!product) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Product not found',
+        });
+      }
+      return product;
+    }),
+});

@@ -9,6 +9,14 @@ datasource db {
   directUrl   = env("DIRECT_URL")
 }
 
+model Categories {
+  id        String   @id @default(ulid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  products  Product[]
+}
+
 model Users{
   id String @id @default(ulid())
   name String?
@@ -18,22 +26,39 @@ model Users{
   updatedAt DateTime @updatedAt
 
   transactions         Transaction[]
+  cartItems           CartItem[]  
 }
 
-model Product{
-  id String @id @default(ulid())
-  sku String @unique
-  slug String @unique
-  name String?
-  description String?
-  price Decimal @default(10.2)
-  imageUrl String?
-  stockQuantity Int
-  minimumOrderQuantity Int
+model CartItem {
+  id        String   @id @default(ulid())
+  userId    String
+  productId String
+  qty       Int      @default(1)  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions         Transaction[]  
+  user      Users   @relation(fields: [userId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId]) 
+}
+
+model Product {
+  id                  String    @id @default(ulid())
+  sku                 String    @unique
+  slug                String    @unique
+  name                String?
+  description         String?
+  price               Decimal   @default(10.2)
+  imageUrl            String?
+  stockQuantity       Int
+  minimumOrderQuantity Int
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  categoryId          String?   
+  category            Categories? @relation(fields: [categoryId], references: [id])
+  transactions        Transaction[]
+  cartItems           CartItem[]  
 }
 
 model Transaction{
