@@ -1,97 +1,101 @@
-import { TRPCError } from "@trpc/server";
-import { transactionModel } from "../model/transaction.model";
-import { checkoutTransaction } from "../schema/transaction.schema";
+import { db as transactionModel } from "../model/transaction.model";
+import { snap } from "../lib/midtrans";
 import { z } from "zod";
-
-if (!process.env.POLAR_ACCESS_TOKEN) {
-  throw new Error("POLAR_ACCESS_TOKEN is not set in environment variables");
-}
-if (!process.env.POLAR_ORDER_ID) {
-  throw new Error("POLAR_ORDER_ID is not set in environment variables");
-}
-if (!process.env.SUCCESS_URL) {
-  throw new Error("SUCCESS_URL is not set in environment variables");
-}
+import { checkoutTransaction } from "../schema/transaction.schema";
+import { ulid } from "ulid";
+import crypto from "crypto";
 
 export const transactionService = {
-  createCheckout: async (data: z.infer<typeof checkoutTransaction>) => {
-    try {
-      const parsedData = checkoutTransaction.safeParse(data);
-      if (!parsedData.success) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Invalid checkout data: ${JSON.stringify(parsedData.error.format())}`,
-        });
-      }
-
-      const { userId, productId, qty, price } = parsedData.data;
-
-      const orderId = `${process.env.POLAR_ORDER_ID}${Date.now()}-${userId}-${productId}`;
-
-      const transaction = await transactionModel.checkout({
-        userId,
-        productId,
-        qty,
-        orderId,
-        price: Number(price),
-        status: "pending",
-      });
-
-      return {
-        transaction,
-        orderId,
-      };
-    } catch (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: `Failed to create checkout: ${error instanceof Error ? error.message : "Unknown error"}`,
-      });
+  checkout: async (
+    data: z.infer<typeof checkoutTransaction>
+  ): Promise<{
+    transaction: Awaited<ReturnType<typeof transactionModel.findByOrderId>>[0],
+    snapToken: string;
+  }> => {
+    const parsed = checkoutTransaction.safeParse(data);
+    if (!parsed.success) {
+      throw new Error("Invalid checkout data: " + JSON.stringify(parsed.error.format()));
     }
+
+    const orderId = `TRADOORA-ORDER-${ulid()}`;
+
+    const transaction = await transactionModel.checkout({
+      userId: parsed.data.userId,
+      productId: parsed.data.productId,
+      qty: parsed.data.qty,
+      orderId,
+      price: parsed.data.price,
+      status: "PENDING",
+    });
+
+    const snapParams = {
+      transaction_details: {
+        order_id: transaction.orderId,
+        gross_amount: Number(transaction.price),
+      },
+      customer_details: {
+        first_name: transaction.user.name,
+        email: transaction.user.email,
+      },
+      item_details: [
+        {
+          id: transaction.product.id,
+          name: transaction.product.name,
+          quantity: transaction.qty,
+          price: Number(transaction.price),
+        },
+      ],
+    };
+
+    const snapResponse = await snap.createTransaction(snapParams);
+
+    return {
+      transaction,
+      snapToken: snapResponse.token,
+    };
   },
 
-  checkTransactionStatus: async (orderId: string) => {
-    try {
-      const transactions = await transactionModel.findByOrderId(orderId);
-      if (!transactions || transactions.length === 0) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Transaction not found",
-        });
-      }
+  handleCallback: async (midtransPayload: any): Promise<void> => {
+    const {
+      order_id,
+      transaction_status,
+      fraud_status,
+      status_code,
+      gross_amount,
+      signature_key,
+    } = midtransPayload;
 
-      return {
-        transaction: transactions[0],
-        polarStatus: transactions[0].status,
-      };
-    } catch (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: `Failed to check transaction status: ${error instanceof Error ? error.message : "Unknown error"}`,
-      });
+    // Verifikasi signature
+    const serverKey = process.env.MIDTRANS_SERVER_KEY!;
+    const expectedSignature = crypto
+      .createHash("sha512")
+      .update(order_id + status_code + gross_amount + serverKey)
+      .digest("hex");
+
+    if (expectedSignature !== signature_key) {
+      throw new Error("Invalid signature from Midtrans");
     }
-  },
 
-  updateTransactionStatus: async (orderId: string, status: string) => {
-    try {
-      const transactions = await transactionModel.findByOrderId(orderId);
-      if (!transactions || transactions.length === 0) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Transaction not found",
-        });
-      }
+    // Map Midtrans status ke status internal
+    let newStatus = "PENDING";
 
-      const updatedTransaction = await transactionModel.update({
-        id: transactions[0].id,
-        status,
-      });
-
-      return updatedTransaction;
-    } catch (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: `Failed to update transaction status: ${error instanceof Error ? error.message : "Unknown error"}`,
-      });
+    switch (transaction_status) {
+      case "settlement":
+        newStatus = "PAID";
+        break;
+      case "cancel":
+      case "expire":
+      case "failure":
+        newStatus = "CANCELLED";
+        break;
+      case "pending":
+        newStatus = "PENDING";
+        break;
+      default:
+        newStatus = transaction_status.toUpperCase();
     }
+
+    // Update ke DB
+    await transactionModel.updateStatusByOrderId(order_id, newStatus);
   },
 };

@@ -6,11 +6,12 @@
   },
   "dependencies": {
     "@hono/trpc-server": "^0.3.4",
-    "@polar-sh/hono": "^0.3.0",
     "@prisma/client": "^6.8.2",
     "@trpc/server": "^11.1.4",
     "bcrypt-ts": "^7.0.0",
     "hono": "^4.7.10",
+    "midtrans-client": "^1.4.3",
+    "superjson": "^2.2.2",
     "ulid": "^3.0.0",
     "zod": "^3.25.34"
   },
