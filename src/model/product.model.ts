@@ -6,4 +6,5 @@ export const db = {
   create: (data: any) => prisma.product.create({ data }),
   update: (id: string, data: any) => prisma.product.update({ where: { id }, data }),
   delete: (id: string) => prisma.product.delete({ where: { id } }),
+  
 };

@@ -11,18 +11,20 @@ const app = new Hono()
 
 app.use(logger())
 
-app.get("/", (c) => c.text("hello backend"))
-
-app.post("/midtrans/callback", async (c) => {
-  const payload = await c.req.json();
-
-  try {
-    await transactionService.handleCallback(payload);
-    return c.json({ message: "Callback processed" }, 200);
-  } catch (err) {
-    console.error("Callback error:", err);
-    return c.json({ error: "Internal Server Error" }, 500);
+app.all("/midtrans/callback", async (c) => {
+  if (c.req.method === "POST") {
+    const payload = await c.req.json();
+    try {
+      await transactionService.handleCallback(payload);
+      return c.json({ message: "Callback processed" }, 200);
+    } catch (err) {
+      console.error("Callback error:", err);
+      return c.json({ error: "Internal Server Error" }, 500);
+    }
+  } else if (c.req.method === "GET") {
+    return c.text("Callback endpoint reached with GET. Expecting POST from Midtrans.");
   }
+  return c.text("Method not allowed for callback", 405);
 });
 
 app.use(

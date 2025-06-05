@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import type { Context } from '../context';
 import { checkoutTransaction } from '../../schema/transaction.schema';
 import { transactionService } from '../../services/transaction.service';
-
+import { z } from 'zod';
 
 const t = initTRPC.context<Context>().create();
 
@@ -21,4 +21,9 @@ export const transactionRouter = t.router({
         });
       }
     }),
+listByUser: t.procedure
+  .input(z.object({ userId: z.string() })) // Input mengharapkan objek dengan userId
+  .query(async ({ input }) => {
+    return transactionService.getTransactionsByUserId(input.userId);
+  }),
 });
