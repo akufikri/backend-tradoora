@@ -27,6 +27,7 @@ model Users{
 
   transactions         Transaction[]
   cartItems           CartItem[]  
+  review              Review[]
 }
 
 model CartItem {
@@ -59,6 +60,7 @@ model Product {
   category            Categories? @relation(fields: [categoryId], references: [id])
   transactions        Transaction[]
   cartItems           CartItem[]  
+  review              Review[]
 }
 
 model Transaction{
@@ -69,6 +71,19 @@ model Transaction{
   qty Int
   price Decimal @default(10.2)
   status String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      Users    @relation(fields: [userId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+model Review{
+  id String @id @default(ulid())
+  userId    String
+  productId String
+  rating    Int
+  comment   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
